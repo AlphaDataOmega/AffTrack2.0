@@ -1,0 +1,346 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model PlatformSettings {
+  id           String   @id @default(cuid())
+  instanceName String
+  cfAccountId  String?
+  cfToken      String?
+  customDomain String?
+  brandingLogo String?
+  primaryColor String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Property {
+  id                String             @id @default(cuid())
+  name              String
+  domain            String             @unique
+  description       String?
+  status            PropertyStatus     @default(PENDING)
+  tags              String[]
+  industry          String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  adNetworks        AdNetwork[]        @relation("AdNetworkToProperty")
+  affiliates        Affiliate[]        @relation("AffiliateToProperty")
+  advertisers       Advertiser[]       @relation("AdvertiserToProperty")
+  campaigns         Campaign[]         @relation("CampaignToProperty")
+  users             User[]             @relation("PropertyToUser")
+  affiliateNetworks AffiliateNetwork[] @relation("AffiliateNetworkToProperty")
+}
+
+model User {
+  id                String             @id @default(cuid())
+  email             String             @unique
+  passwordHash      String
+  name              String?
+  isMaster          Boolean            @default(false)
+  status            UserStatus         @default(PENDING)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  phone             String?
+  timezone          String?            @default("America/New_York")
+  lastLoginAt       DateTime?
+  activities        ActivityLog[]
+  adNetworks        AdNetwork[]
+  affiliates        Affiliate[]
+  advertisers       Advertiser[]
+  campaigns         Campaign[]
+  sessions          Session[]
+  properties        Property[]         @relation("PropertyToUser")
+  affiliateNetworks AffiliateNetwork[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model ActivityLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+  action     String
+  details    Json?
+  propertyId String?
+  User       User?    @relation(fields: [userId], references: [id])
+
+  @@index([action])
+  @@index([userId])
+  @@index([propertyId])
+}
+
+model AdNetwork {
+  id          String        @id @default(cuid())
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  userId      String?
+  name        String
+  description String?
+  tags        String[]
+  network     String
+  accountId   String
+  currency    String        @default("USD")
+  timezone    String        @default("UTC")
+  username    String?
+  password    String?
+  loginUrl    String?
+  tracking    Json?
+  status      NetworkStatus @default(ACTIVE)
+  user        User?         @relation(fields: [userId], references: [id])
+  properties  Property[]    @relation("AdNetworkToProperty")
+  Campaign    Campaign[]
+
+  @@index([status])
+  @@index([network])
+}
+
+model Affiliate {
+  id          String          @id @default(cuid())
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  userId      String?
+  name        String
+  description String?
+  tags        String[]
+  status      AffiliateStatus @default(PENDING)
+  contactName String
+  company     String?
+  website     String?
+  phone       String
+  skype       String
+  email       String
+  User        User?           @relation(fields: [userId], references: [id])
+  properties  Property[]      @relation("AffiliateToProperty")
+  Campaign    Campaign[]
+}
+
+model Campaign {
+  id              String         @id @default(cuid())
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  userId          String?
+  name            String
+  description     String?
+  type            String
+  sourceType      String
+  source          String
+  status          CampaignStatus @default(DRAFT)
+  utmSource       String?
+  utmMedium       String?
+  utmCampaign     String?
+  utmContent      String?
+  utmTerm         String?
+  countries       String[]
+  devices         String[]
+  browsers        String[]
+  languages       String[]
+  destinationType String         @default("SINGLE")
+  distribution    String         @default("EVEN")
+  destinations    Destination[]
+  rules           Json?
+  campaignType    String
+  bidAmount       Float?
+  targetCpa       Float?
+  daily           Float?
+  total           Float?
+  dailyUnlimited  Boolean        @default(false)
+  totalUnlimited  Boolean        @default(false)
+  affiliateId     String?
+  adNetworkId     String?
+  affiliate       Affiliate?     @relation(fields: [affiliateId], references: [id])
+  adNetwork       AdNetwork?     @relation(fields: [adNetworkId], references: [id])
+  User            User?          @relation(fields: [userId], references: [id])
+  properties      Property[]     @relation("CampaignToProperty")
+  visitors        Visitor[]
+}
+
+model Destination {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Basic info
+  name      String
+  url       String
+  isDefault Boolean @default(false)
+  weight    Int? // For weighted distribution
+
+  // Stats
+  clicks      Int     @default(0)
+  conversions Int     @default(0)
+  revenue     Decimal @default(0)
+
+  // Calculated metrics (can be computed or stored)
+  ctr Float? // Click-through rate
+  cr  Float? // Conversion rate
+  epc Float? // Earnings per click
+  rpc Float? // Revenue per click
+
+  // Rules for rule-based distribution
+  rules DestinationRule[]
+
+  // Relations
+  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  campaignId String
+
+  // Timestamps for A/B testing
+  testStartedAt DateTime?
+  testEndedAt   DateTime?
+  visitors      Visitor[]
+
+  @@index([campaignId])
+}
+
+model DestinationRule {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  field    String // utm_source, country, device, etc.
+  operator String // equals, contains, between, etc.
+  value    String // The actual value to match against
+
+  destination   Destination @relation(fields: [destinationId], references: [id], onDelete: Cascade)
+  destinationId String
+
+  @@index([destinationId])
+}
+
+model Visitor {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  // Traffic source context
+  campaignId String
+  campaign   Campaign @relation(fields: [campaignId], references: [id])
+  sourceType String // 'affiliate' or 'adnetwork'
+  sourceId   String // affiliateId or adNetworkId
+
+  // Destination context
+  destinationId String?
+  destination   Destination? @relation(fields: [destinationId], references: [id])
+
+  // Visitor info
+  ip        String?
+  userAgent String?
+  referer   String?
+  country   String?
+  device    String?
+  browser   String?
+  language  String?
+
+  // Traffic source parameters
+  subId   String? // Affiliate/network sub ID
+  clickId String? // Original click ID from source
+
+  // UTM and additional parameters
+  utmSource   String?
+  utmMedium   String?
+  utmCampaign String?
+  utmContent  String?
+  utmTerm     String?
+  metaData    Json? // Additional tracking parameters
+
+  @@index([campaignId])
+  @@index([sourceType, sourceId])
+  @@index([destinationId])
+  @@index([subId])
+  @@index([clickId])
+  @@index([country])
+  @@index([createdAt])
+}
+
+model AffiliateNetwork {
+  id          String  @id @default(cuid())
+  accountName String
+  name        String // This is now the network name (previously companyName)
+  description String?
+  status      String // ACTIVE, INACTIVE, PENDING
+
+  contact      Json // { manager: { name, email, phone?, skype?, telegram? }, billing: {...}, technical: {...} }
+  platform     Json // { loginUrl: string, accountId?: string, username?: string, password?: string, email?: string, reportingUrl?: string }
+  paymentTerms Json // { paymentFrequency: string, currency: string, minimumPayout: number }
+
+  userId     String
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  properties Property[] @relation("AffiliateNetworkToProperty")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([name])
+}
+
+model Advertiser {
+  id          String          @id @default(cuid())
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  userId      String?
+  name        String
+  company     String?
+  description String?
+  tags        String[]
+  status      AdvertiserStatus @default(PENDING)
+  contactName String
+  website     String?
+  phone       String
+  email       String
+  user        User?           @relation(fields: [userId], references: [id])
+  properties  Property[]      @relation("AdvertiserToProperty")
+
+  @@index([userId])
+}
+
+enum UserStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+}
+
+enum PropertyStatus {
+  PENDING
+  ACTIVE
+  INACTIVE
+}
+
+enum NetworkStatus {
+  ACTIVE
+  PAUSED
+  DELETED
+  ARCHIVED
+}
+
+enum AffiliateStatus {
+  PENDING
+  ACTIVE
+  PAUSED
+  BLOCKED
+}
+
+enum CampaignStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+enum AdvertiserStatus {
+  ACTIVE
+  PENDING
+  INACTIVE
+}
